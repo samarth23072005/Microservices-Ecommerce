@@ -1,0 +1,189 @@
+services:
+  # ============================================================================
+  # 1. MongoDB Database Server (Houses user_db, product_db, and order_db)
+  # ============================================================================
+  mongodb:
+    image: mongo:7-jammy
+    container_name: ecommerce-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD-SHELL", "echo 'db.runCommand(\"ping\").ok' | mongosh localhost:27017/test --quiet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ============================================================================
+  # 2. User Microservice (Port 5001)
+  # ============================================================================
+  user-service:
+    build:
+      context: ./services/user-service
+      dockerfile: Dockerfile
+    image: samarth23072005/ecommerce-user-service:latest
+    container_name: ecommerce-user-service
+    restart: unless-stopped
+    ports:
+      - "5005:5001"
+    environment:
+      - PORT=5001
+      - NODE_ENV=production
+      - MONGO_URI=mongodb://mongodb:27017/user_db
+      - JWT_SECRET=super_secret_jwt_key_ecommerce_2026_dev_env_only
+      - JWT_EXPIRES_IN=1d
+      - ALLOWED_ORIGIN=http://localhost:5173
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ============================================================================
+  # 3. Product Microservice (Port 5002)
+  # ============================================================================
+  product-service:
+    build:
+      context: ./services/product-service
+      dockerfile: Dockerfile
+    image: samarth23072005/ecommerce-product-service:latest
+    container_name: ecommerce-product-service
+    restart: unless-stopped
+    ports:
+      - "5004:5002"
+    environment:
+      - PORT=5002
+      - NODE_ENV=production
+      - MONGO_URI=mongodb://mongodb:27017/product_db
+      - ALLOWED_ORIGIN=*
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5002/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ============================================================================
+  # 4. Order Microservice (Port 5003)
+  # ============================================================================
+  order-service:
+    build:
+      context: ./services/order-service
+      dockerfile: Dockerfile
+    image: samarth23072005/ecommerce-order-service:latest
+    container_name: ecommerce-order-service
+    restart: unless-stopped
+    ports:
+      - "5003:5003"
+    environment:
+      - PORT=5003
+      - NODE_ENV=production
+      - MONGO_URI=mongodb://mongodb:27017/order_db
+      - JWT_SECRET=super_secret_jwt_key_ecommerce_2026_dev_env_only
+      - PRODUCT_SERVICE_URL=http://product-service:5002
+      - ALLOWED_ORIGIN=http://localhost:5173
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5003/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ============================================================================
+  # 5. API Gateway (Port 4000)
+  # ============================================================================
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    image: samarth23072005/ecommerce-api-gateway:latest
+    container_name: ecommerce-api-gateway
+    restart: unless-stopped
+    ports:
+      - "4001:4000"
+    environment:
+      - PORT=4000
+      - NODE_ENV=production
+      - CLIENT_URL=http://localhost:5173
+      - ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000
+      - PRODUCT_SERVICE_URL=http://product-service:5002
+      - USER_SERVICE_URL=http://user-service:5001
+      - ORDER_SERVICE_URL=http://order-service:5003
+    depends_on:
+      user-service:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ============================================================================
+  # 6. Frontend Application (React + Vite + Nginx on Port 5173)
+  # ============================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_GATEWAY_URL=http://localhost:4000
+    image: samarth23072005/ecommerce-frontend:latest
+    container_name: ecommerce-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+# ==============================================================================
+# Persistent Volumes
+# ==============================================================================
+volumes:
+  mongodb_data:
+    driver: local
+
+# ==============================================================================
+# Isolated Bridge Network
+# ==============================================================================
+networks:
+  ecommerce-network:
+    driver: bridge

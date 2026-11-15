@@ -1,0 +1,26 @@
+{
+  "name": "microservices-ecommerce",
+  "version": "1.0.0",
+  "description": "Production-Style Microservices-Based E-Commerce Application",
+  "private": true,
+  "scripts": {
+    "docker:config": "docker compose config",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:ps": "docker compose ps",
+    "docker:logs": "docker compose logs -f",
+    "docker:seed": "docker compose exec product-service npm run seed",
+    "docker:push": "powershell -ExecutionPolicy Bypass -File ./scripts/push-images.ps1"
+  },
+  "keywords": [
+    "microservices",
+    "ecommerce",
+    "docker",
+    "react",
+    "nodejs",
+    "mongodb"
+  ],
+  "author": "Samarth",
+  "license": "ISC"
+}
